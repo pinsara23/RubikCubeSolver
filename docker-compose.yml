@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  rubik-video-api:
+    container_name: rubik-video-api
+    image: rubikcubesolver:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Linux hosts: map webcam device for cv2.VideoCapture(0)
+    devices:
+      - "/dev/video0:/dev/video0"
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    container_name: watchtower
+    image: containrrr/watchtower:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 30 --cleanup --label-enable
