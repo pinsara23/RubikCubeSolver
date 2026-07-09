@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Rubik's Cube Solver</title>
+  <style>
+    /* --- CSS STYLES --- */
+    * { box-sizing: border-box; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #202327; font-family: sans-serif; color: white; }
+    
+    #app { display: flex; width: 100%; height: 100%; }
+    #scene-root { flex-grow: 1; height: 100%; position: relative; z-index: 1; }
+    
+    .panel { width: 320px; background: rgba(22, 24, 29, 0.95); padding: 20px; z-index: 10; display: flex; flex-direction: column; overflow-y: auto; box-shadow: 0 0 15px rgba(0,0,0,0.5); }
+    .panel-left { border-right: 1px solid #333; }
+    .panel-right { border-left: 1px solid #333; }
+    
+    h2 { font-size: 1.2rem; margin-top: 0; margin-bottom: 15px; color: #e0e0e0; letter-spacing: 1px; text-transform: uppercase; }
+    
+    .button-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .move-btn { background: #3a3f47; color: white; border: none; padding: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; border-radius: 4px; transition: background 0.2s; }
+    .move-btn:hover { background: #505660; }
+    
+    .shuffle-btn { width: 100%; background: #2f7bff; color: white; border: none; padding: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; border-radius: 4px; margin-bottom: 15px; transition: background 0.2s; }
+    .shuffle-btn:hover { background: #1a65e5; }
+    
+    .status-box { background: #0b0c0d; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 0.9rem; color: #a8c8ff; border: 1px solid #333; min-height: 50px; word-wrap: break-word; }
+    
+    .section-divider { margin-top: 25px; border-top: 1px solid #444; padding-top: 20px; }
+    
+    .color-swatch { width: 35px; height: 35px; cursor: pointer; border-radius: 4px; transition: transform 0.1s; border: 2px solid transparent; }
+    .color-swatch:hover { transform: scale(1.1); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside class="panel panel-left">
+      
+      <h2 style="margin-bottom: 5px;">Live Scanner</h2>
+      <img src="http://127.0.0.1:5000/video_feed" 
+           onerror="this.onerror=null; this.src=''; this.alt='Python Camera Offline. Start app.py';"
+           style="width: 100%; min-height: 150px; border-radius: 6px; border: 2px solid #444; margin-bottom: 20px; background-color: #000; color: #ff4444; text-align: center; line-height: 150px; font-family: monospace;" 
+           alt="Loading Camera..." />
+
+      <h2>Camera Views</h2>
+      <p style="font-size: 0.8rem; color: #aaa; margin-top: -10px;">Snap 3D camera to a perfect face angle.</p>
+      <div id="camera-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px;"></div>
+      
+      <div style="height: 1px; background: #444; margin: 15px 0;"></div>
+      
+      <h2>Manual Rotation</h2>
+      <div id="move-buttons" class="button-grid"></div>
+    </aside>
+
+    <div id="scene-root"></div>
+
+    <aside class="panel panel-right">
+      <h2>Controls</h2>
+      <button id="shuffle-btn" class="shuffle-btn">SHUFFLE CUBE</button>
+      <div id="status-box" class="status-box">Ready. Scan, paint, or shuffle!</div>
+
+      <div class="section-divider">
+        <h2>1. Camera Scan</h2>
+        <p style="font-size: 0.8rem; color: #aaa; margin-top: -10px;">Hold cube to webcam, set 3D camera to match, and scan.</p>
+        <button id="scan-btn" class="shuffle-btn" style="background-color: #db1d26;">SCAN CURRENT VIEW</button>
+      </div>
+
+      <div class="section-divider">
+        <h2>2. Paint Fixes</h2>
+        <p style="font-size: 0.8rem; color: #aaa; margin-top: -10px;">Select color, click 3D sticker to paint.</p>
+        <div id="palette" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <div class="color-swatch" style="background: #ffffff; border-color: white;" data-color="#ffffff"></div>
+          <div class="color-swatch" style="background: #f57c1f;" data-color="#f57c1f"></div>
+          <div class="color-swatch" style="background: #2f7bff;" data-color="#2f7bff"></div>
+          <div class="color-swatch" style="background: #ffd22f;" data-color="#ffd22f"></div>
+          <div class="color-swatch" style="background: #db1d26;" data-color="#db1d26"></div>
+          <div class="color-swatch" style="background: #3db959;" data-color="#3db959"></div>
+        </div>
+      </div>
+
+      <div class="section-divider">
+        <h2>3. Solve Algorithm</h2>
+        <button id="solve-btn" class="shuffle-btn" style="background-color: #28a745; margin-bottom: 0;">CALCULATE SOLUTION</button>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module">
+    import * as THREE from "https://esm.sh/three@0.164.1";
+    import { OrbitControls } from "https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js";
+    import { RoundedBoxGeometry } from "https://esm.sh/three@0.164.1/examples/jsm/geometries/RoundedBoxGeometry.js";
+
+    // --- DOM Elements ---
+    const sceneRoot = document.getElementById("scene-root");
+    const statusBox = document.getElementById("status-box");
+    const moveButtons = document.getElementById("move-buttons");
+    const shuffleBtn = document.getElementById("shuffle-btn");
+
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#202327");
+
+    const getWidth = () => window.innerWidth - 640; 
+    const getHeight = () => window.innerHeight;
+
+    const camera = new THREE.PerspectiveCamera(48, getWidth() / getHeight(), 0.1, 100);
+    camera.position.set(6.4, 5.5, 6.8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(getWidth(), getHeight());
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sceneRoot.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.minDistance = 5;
+    controls.maxDistance = 14;
+
+    // --- Lighting & Environment ---
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    const key = new THREE.DirectionalLight(0xffffff, 0.85);
+    key.position.set(6, 9, 5);
+    key.castShadow = true;
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0xa8c8ff, 0.3);
+    rim.position.set(-7, 4, -6);
+    scene.add(rim);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(30, 30),
+      new THREE.MeshStandardMaterial({ color: "#16181d", roughness: 0.98 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -2.55;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // --- Cube Construction ---
+    const cubeGroup = new THREE.Group();
+    scene.add(cubeGroup);
+    const cubies = [];
+    const spacing = 1.04;
+
+    const colorMap = {
+      px: new THREE.Color("#f57c1f"), // R: Orange
+      nx: new THREE.Color("#db1d26"), // L: Red
+      py: new THREE.Color("#ffffff"), // U: White
+      ny: new THREE.Color("#ffd22f"), // D: Yellow
+      pz: new THREE.Color("#2f7bff"), // F: Blue
+      nz: new THREE.Color("#3db959")  // B: Green
+    };
+
+    const roundedGeo = new RoundedBoxGeometry(0.94, 0.94, 0.94, 4, 0.08);
+    const stickerGeo = new THREE.PlaneGeometry(0.68, 0.68);
+    const cubieBodyMat = new THREE.MeshStandardMaterial({ color: "#0b0c0d", roughness: 0.94 });
+
+    function createSticker(color, pos, rot) {
+      const sticker = new THREE.Mesh(stickerGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.86 }));
+      sticker.position.copy(pos);
+      sticker.rotation.set(rot.x, rot.y, rot.z);
+      return sticker;
+    }
+
+    for (let x = -1; x <= 1; x++) {
+      for (let y = -1; y <= 1; y++) {
+        for (let z = -1; z <= 1; z++) {
+          const cubie = new THREE.Mesh(roundedGeo, cubieBodyMat.clone());
+          const offset = 0.476;
+          
+          if (x === 1)  cubie.add(createSticker(colorMap.px, new THREE.Vector3(offset,0,0), new THREE.Vector3(0,Math.PI/2,0)));
+          if (x === -1) cubie.add(createSticker(colorMap.nx, new THREE.Vector3(-offset,0,0), new THREE.Vector3(0,-Math.PI/2,0)));
+          if (y === 1)  cubie.add(createSticker(colorMap.py, new THREE.Vector3(0,offset,0), new THREE.Vector3(-Math.PI/2,0,0)));
+          if (y === -1) cubie.add(createSticker(colorMap.ny, new THREE.Vector3(0,-offset,0), new THREE.Vector3(Math.PI/2,0,0)));
+          if (z === 1)  cubie.add(createSticker(colorMap.pz, new THREE.Vector3(0,0,offset), new THREE.Vector3(0,0,0)));
+          if (z === -1) cubie.add(createSticker(colorMap.nz, new THREE.Vector3(0,0,-offset), new THREE.Vector3(0,Math.PI,0)));
+
+          cubie.position.set(x * spacing, y * spacing, z * spacing);
+          cubeGroup.add(cubie);
+          cubies.push(cubie);
+        }
+      }
+    }
+
+    // --- Movement Logic ---
+    let activeMove = null;
+    const moveQueue = [];
+    const moveDefs = {
+      U: { axis: "y", sel: p => p.y > spacing * 0.5, dir: -1 }, "U'": { axis: "y", sel: p => p.y > spacing * 0.5, dir: 1 },
+      D: { axis: "y", sel: p => p.y < -spacing * 0.5, dir: 1 }, "D'": { axis: "y", sel: p => p.y < -spacing * 0.5, dir: -1 },
+      R: { axis: "x", sel: p => p.x > spacing * 0.5, dir: -1 }, "R'": { axis: "x", sel: p => p.x > spacing * 0.5, dir: 1 },
+      L: { axis: "x", sel: p => p.x < -spacing * 0.5, dir: 1 }, "L'": { axis: "x", sel: p => p.x < -spacing * 0.5, dir: -1 },
+      F: { axis: "z", sel: p => p.z > spacing * 0.5, dir: -1 }, "F'": { axis: "z", sel: p => p.z > spacing * 0.5, dir: 1 },
+      B: { axis: "z", sel: p => p.z < -spacing * 0.5, dir: 1 }, "B'": { axis: "z", sel: p => p.z < -spacing * 0.5, dir: -1 }
+    };
+
+    function startMove(moveName, duration = 320) {
+      const def = moveDefs[moveName];
+      if (!def) return;
+      const pivot = new THREE.Group();
+      cubeGroup.add(pivot);
+      const moving = cubies.filter(c => def.sel(c.position.clone()));
+      moving.forEach(c => pivot.attach(c));
+
+      activeMove = {
+        pivot, moving, duration, elapsed: 0,
+        axisVec: new THREE.Vector3(def.axis==="x"?1:0, def.axis==="y"?1:0, def.axis==="z"?1:0),
+        target: (Math.PI / 2) * def.dir, prevAngle: 0
+      };
+    }
+
+    function finishMove() {
+      const { pivot, moving, axisVec, target, prevAngle } = activeMove;
+      pivot.rotateOnAxis(axisVec, target - prevAngle);
+      const snap = a => Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+
+      moving.forEach(c => {
+        cubeGroup.attach(c);
+        c.position.set(Math.round(c.position.x/spacing)*spacing, Math.round(c.position.y/spacing)*spacing, Math.round(c.position.z/spacing)*spacing);
+        c.rotation.set(snap(c.rotation.x), snap(c.rotation.y), snap(c.rotation.z));
+      });
+      cubeGroup.remove(pivot);
+      activeMove = null;
+    }
+
+    function updateMove(dt) {
+      if (!activeMove) return;
+      activeMove.elapsed += dt;
+      const t = Math.min(activeMove.elapsed / activeMove.duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      const currentAngle = activeMove.target * ease;
+      activeMove.pivot.rotateOnAxis(activeMove.axisVec, currentAngle - activeMove.prevAngle);
+      activeMove.prevAngle = currentAngle;
+      if (t >= 1) finishMove();
+    }
+
+    // --- UI Logic: Rotation Buttons ---
+    Object.keys(moveDefs).forEach(mv => {
+      const btn = document.createElement("button");
+      btn.className = "move-btn";
+      btn.textContent = mv;
+      btn.onclick = () => moveQueue.push(mv);
+      moveButtons.appendChild(btn);
+    });
+
+    shuffleBtn.onclick = () => {
+      const faces = ["U", "D", "R", "L", "F", "B"];
+      const mods = ["", "'"];
+      for(let i=0; i<18; i++) {
+        moveQueue.push(faces[Math.floor(Math.random()*6)] + mods[Math.floor(Math.random()*2)]);
+      }
+      statusBox.textContent = "Cube scrambled randomly.";
+    };
+
+    // --- UI Logic: Camera Snap Buttons ---
+    let camAnim = null;
+    const faceTargets = [
+      { id: "Front", pos: new THREE.Vector3(0, 0, 11) }, { id: "Right", pos: new THREE.Vector3(11, 0, 0) },
+      { id: "Back",  pos: new THREE.Vector3(0, 0, -11) }, { id: "Left",  pos: new THREE.Vector3(-11, 0, 0) },
+      { id: "Top",   pos: new THREE.Vector3(0, 11, 0.01) }, { id: "Bot",   pos: new THREE.Vector3(0, -11, 0.01) }
+    ];
+
+    faceTargets.forEach(face => {
+      const btn = document.createElement("button");
+      btn.className = "move-btn";
+      btn.style.backgroundColor = "#2b5c8f";
+      btn.textContent = face.id;
+      btn.onclick = () => {
+        if (camAnim) cancelAnimationFrame(camAnim);
+        const startPos = camera.position.clone();
+        const startTime = performance.now();
+        function animateCam(time) {
+          let t = Math.min((time - startTime) / 500, 1);
+          camera.position.lerpVectors(startPos, face.pos, 1 - Math.pow(1 - t, 3)); 
+          controls.update();
+          if (t < 1) camAnim = requestAnimationFrame(animateCam);
+        }
+        camAnim = requestAnimationFrame(animateCam);
+      };
+      document.getElementById("camera-buttons").appendChild(btn);
+    });
+
+    // --- CV & SCANNING LOGIC ---
+    const cvColorMap = {
+      "Red": colorMap.nx, "Orange": colorMap.px, "Yellow": colorMap.ny,
+      "Green": colorMap.nz, "Blue": colorMap.pz, "White": colorMap.py, "Unknown": new THREE.Color("#555555")
+    };
+
+    document.getElementById('scan-btn').onclick = async () => {
+      if (activeMove || moveQueue.length > 0) return; 
+      statusBox.textContent = "Fetching colors from Python API...";
+      
+      try {
+        const res = await fetch("http://127.0.0.1:5000/api/cube-colors");
+        const data = await res.json();
+        
+        // Robust Error Handling for the OpenCV payload
+        if (!res.ok || data.error) {
+            statusBox.textContent = "Scanner Error: " + (data.error || "Unknown backend error");
+            return;
+        }
+        if (!Array.isArray(data) || data.length < 9) {
+            statusBox.textContent = "Error: Invalid array format returned from Python.";
+            return;
+        }
+        
+        const cameraPos = new THREE.Vector3(); camera.getWorldPosition(cameraPos);
+        const facingStickers = [];
+        
+        cubies.forEach(cubie => cubie.children.forEach(child => {
+          if (child.geometry === stickerGeo) {
+            const worldNorm = new THREE.Vector3(0,0,1).applyQuaternion(child.getWorldQuaternion(new THREE.Quaternion()));
+            const toCamera = new THREE.Vector3().subVectors(cameraPos, child.getWorldPosition(new THREE.Vector3())).normalize();
+            if (worldNorm.dot(toCamera) > 0.8) facingStickers.push(child);
+          }
+        }));
+
+        if (facingStickers.length !== 9) { 
+            statusBox.textContent = "Error: Point 3D camera perfectly at 1 face before scanning!"; 
+            return; 
+        }
+
+        const posA = new THREE.Vector3(); const posB = new THREE.Vector3();
+        facingStickers.sort((a, b) => {
+          a.getWorldPosition(posA).project(camera);
+          b.getWorldPosition(posB).project(camera);
+          if (Math.abs(posA.y - posB.y) > 0.1) return posB.y - posA.y; 
+          return posA.x - posB.x;
+        });
+
+        for (let i = 0; i < 9; i++) {
+          facingStickers[i].material.color.copy(cvColorMap[data[i].color] || cvColorMap["Unknown"]);
+        }
+        statusBox.textContent = "Face updated! Rotate physical cube and repeat.";
+      } catch (err) { 
+          console.error(err);
+          statusBox.textContent = "Error: Cannot connect to Python backend. Is app.py running?"; 
+      }
+    };
+
+    // --- MANUAL PAINTING LOGIC ---
+    let activeColor = new THREE.Color("#ffffff");
+    const swatches = document.querySelectorAll('.color-swatch');
+    swatches.forEach(swatch => {
+      swatch.onclick = (e) => {
+        swatches.forEach(s => s.style.border = "2px solid transparent");
+        e.target.style.border = "2px solid white";
+        activeColor = new THREE.Color(e.target.dataset.color);
+      };
+    });
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    sceneRoot.addEventListener('pointerdown', (e) => {
+      const rect = sceneRoot.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(cubeGroup.children, true);
+      for (let i = 0; i < intersects.length; i++) {
+        if (intersects[i].object.geometry === stickerGeo) {
+          intersects[i].object.material.color.copy(activeColor);
+          break;
+        }
+      }
+    });
+
+    // --- SOLVING LOGIC (KOCIEMBA) ---
+    function getCenterColorHex(axis, dir) {
+      let hex = "";
+      cubies.forEach(c => {
+        if (Math.round(c.position[axis]/spacing)===dir && Math.round(c.position[axis==='x'?'y':'x']/spacing)===0 && Math.round(c.position[axis==='z'?'y':'z']/spacing)===0) {
+          c.children.forEach(child => {
+            if (child.geometry === stickerGeo) {
+              const n = new THREE.Vector3(0,0,1).applyQuaternion(child.getWorldQuaternion(new THREE.Quaternion()));
+              if (Math.round(n[axis]) === dir) hex = child.material.color.getHexString();
+            }
+          });
+        }
+      });
+      return hex;
+    }
+
+    document.getElementById('solve-btn').onclick = async () => {
+      if (activeMove || moveQueue.length > 0) return;
+      statusBox.textContent = "Extracting 3D cube state...";
+
+      const cMap = {};
+      cMap[getCenterColorHex('y', 1)] = 'U'; cMap[getCenterColorHex('x', 1)] = 'R';
+      cMap[getCenterColorHex('z', 1)] = 'F'; cMap[getCenterColorHex('y', -1)] = 'D';
+      cMap[getCenterColorHex('x', -1)] = 'L'; cMap[getCenterColorHex('z', -1)] = 'B';
+
+      const facesToExtract = [
+        { name: 'U', norm: new THREE.Vector3(0, 1, 0), sort: (a,b) => Math.round((a.p.z-b.p.z)*10) || Math.round((a.p.x-b.p.x)*10) },
+        { name: 'R', norm: new THREE.Vector3(1, 0, 0), sort: (a,b) => Math.round((b.p.y-a.p.y)*10) || Math.round((b.p.z-a.p.z)*10) },
+        { name: 'F', norm: new THREE.Vector3(0, 0, 1), sort: (a,b) => Math.round((b.p.y-a.p.y)*10) || Math.round((a.p.x-b.p.x)*10) },
+        { name: 'D', norm: new THREE.Vector3(0, -1, 0), sort: (a,b) => Math.round((b.p.z-a.p.z)*10) || Math.round((a.p.x-b.p.x)*10) },
+        { name: 'L', norm: new THREE.Vector3(-1, 0, 0), sort: (a,b) => Math.round((b.p.y-a.p.y)*10) || Math.round((a.p.z-b.p.z)*10) },
+        { name: 'B', norm: new THREE.Vector3(0, 0, -1), sort: (a,b) => Math.round((b.p.y-a.p.y)*10) || Math.round((b.p.x-a.p.x)*10) },
+      ];
+
+      let kociembaStr = "";
+      facesToExtract.forEach(faceDef => {
+        let stickers = [];
+        cubies.forEach(c => c.children.forEach(child => {
+          if (child.geometry === stickerGeo) {
+            const n = new THREE.Vector3(0,0,1).applyQuaternion(child.getWorldQuaternion(new THREE.Quaternion()));
+            if (n.distanceTo(faceDef.norm) < 0.1) stickers.push({ p: child.getWorldPosition(new THREE.Vector3()), color: child.material.color.getHexString() });
+          }
+        }));
+        stickers.sort(faceDef.sort);
+        stickers.forEach(s => { const l = cMap[s.color]; kociembaStr += l ? l : "?"; });
+      });
+
+      if (kociembaStr.includes("?")) { statusBox.textContent = "Error: Some colors don't match center pieces!"; return; }
+
+      statusBox.textContent = "Calculating solution via Python...";
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/solve', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cube_string: kociembaStr })
+        });
+        const result = await response.json();
+        if (result.error) statusBox.textContent = "Unsolvable state: " + result.error;
+        else {
+          statusBox.textContent = `Solving in ${result.moves.length} moves!`;
+          result.moves.forEach(m => {
+            if (m.endsWith("2")) { moveQueue.push(m[0]); moveQueue.push(m[0]); }
+            else moveQueue.push(m);
+          });
+        }
+      } catch (err) { statusBox.textContent = "API Error. Is Python running?"; }
+    };
+
+    // --- Main Loop ---
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!activeMove && moveQueue.length) startMove(moveQueue.shift());
+      updateMove(clock.getDelta() * 1000);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = getWidth() / getHeight();
+      camera.updateProjectionMatrix();
+      renderer.setSize(getWidth(), getHeight());
+    });
+  </script>
+</body>
+</html>
