@@ -24,8 +24,11 @@ The backend folder contains multiple Flask entry points and helper scripts. They
 
 - `tables.json`: solver-related lookup data used by the project.
 - Sample images such as `rub.jpeg`, `rubbt3.jpeg`, and similar files for image-based testing.
-- `solver.jpeg`: photo of the actual hardware build used by the project.
 - `Dockerfile` and `docker-compose.yml`: container setup for the backend environment.
+
+### Hardware image
+
+![Solver hardware](solver.jpeg)
 
 ### Backend capabilities
 
@@ -162,4 +165,3 @@ The firmware folder contains ESP32 Arduino sketches used to test and control the
 - The HSV thresholds in the backend are hardcoded and may need tuning for your camera and lighting.
 - The live webcam variants expect the cube to be centered and clearly visible.
 - The hardware scripts use different servo-calibration strategies, so choose the one that matches your robot build.
-- `solver.jpeg` is included as a reference image of the physical solver hardware.
