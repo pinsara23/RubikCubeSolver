@@ -18,12 +18,12 @@ except serial.SerialException:
 calibration_data = {
     "rotF_center": 92, "rotF_cw": 182, "rotF_ccw": 2,
     "rotB_center": 90, "rotB_cw": 180, "rotB_ccw": 0,
-    "rotL_center": 91, "rotL_cw": 183, "rotL_ccw": 3,
-    "rotR_center": 81, "rotR_cw": 178, "rotR_ccw": -7,
+    "rotL_center": 91, "rotL_cw": 185, "rotL_ccw": 0,
+    "rotR_center": 85, "rotR_cw": 178, "rotR_ccw": -7,
 
-    "gripF_retract": 0, "gripF_extend": 93,
+    "gripF_retract": 0, "gripF_extend": 96,
     "gripB_retract": -5, "gripB_extend": 73,
-    "gripL_retract": -10 , "gripL_extend": 50, 
+    "gripL_retract": -15 , "gripL_extend": 50, 
     "gripR_retract": 0, "gripR_extend": 80  
 }
 
@@ -190,6 +190,12 @@ def interactive_control(solution):
             time.sleep(1) # wait for physical movement
             print("Running motors...")
             run_motors(solution)
+            time.sleep(1) # wait for physical movement
+            print("Retracting all grippers...")
+            move_servo_without_delay("gripF", calibration_data["gripF_retract"])
+            move_servo_without_delay("gripB", calibration_data["gripB_retract"])
+            move_servo_without_delay("gripL", calibration_data["gripL_retract"])
+            move_servo_without_delay("gripR", calibration_data["gripR_retract"])
             break
         elif keyboard.is_pressed('ctrl'):
             print("\nCtrl pressed: Retracting all grippers...")
