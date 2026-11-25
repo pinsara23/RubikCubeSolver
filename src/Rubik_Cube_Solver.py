@@ -6,7 +6,7 @@ from twophase import solve
 import serial
 import time
 import threading
-from src.Cube_movements import interactive_control
+from Cube_movements import interactive_control
 
 app = Flask(__name__)
 CORS(app) 
